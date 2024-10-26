@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 import torchvision
 from torchvision import transforms
 import utility.utils as utils  # 自定义的工具模块
+import utility.datasets as datasets  # 自定义的工具模块
 import os
 
 # 解析从命令行传递的选项
@@ -26,13 +27,13 @@ TRAIN_PATH = os.path.join(DATAROOT, 'training_bymerge.pt')
 TEST_PATH = os.path.join(DATAROOT, 'test_bymerge.pt')
 
 # 加载训练数据集并进行预处理
-tr_dataset = utils.SimpleDataset(TRAIN_PATH,
+tr_dataset = datasets.SimpleDataset(TRAIN_PATH,
                                  num_pulse=options.num_pulse,
                                  crop=options.crop,
                                  sampling=options.sampling,
                                  ori_img=True)
 # 加载测试数据集并进行预处理
-te_dataset = utils.SimpleDataset(TEST_PATH,
+te_dataset = datasets.SimpleDataset(TEST_PATH,
                                  num_pulse=options.num_pulse,
                                  crop=options.crop,
                                  sampling=options.sampling,

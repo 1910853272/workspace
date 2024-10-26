@@ -26,7 +26,7 @@ CODES_DIR = os.path.dirname(os.getcwd())
 DATAROOT = 'dataset'  # 数据集路径
 DEVICE_DIR = os.path.join(os.getcwd(), 'data')  # 设备数据路径
 device_path = os.path.join(DEVICE_DIR, device_filename)  # 设备文件的完整路径
-SAVE_PATH = '/home/swang/codes/rc_sim/log'  # 日志保存路径
+SAVE_PATH = 'C:\\Users\\19108\Desktop\workspace\Baseline\In-sensor reservoir computing for multi-task learning\\rc_sim\log'  # 日志保存路径
 save_dir_name = os.path.join(SAVE_PATH, save_dir_name)  # 日志保存目录
 
 # 确保数据集和保存路径存在

@@ -25,23 +25,7 @@ def bin2dec(b, bits):
     # 根据掩码计算出对应的十进制值
     return torch.sum(b * mask, dim=1)
 
-# 显示单个图像并保存
-def single_fig_show(data, filename, save_dir, grid=False, grid_width=2, format='png'):
-    # 生成完整的保存路径和文件名
-    filename = os.path.join(save_dir, filename)
-    filename = filename + '.' + format
-    img_h, img_w = data.shape[0], data.shape[1]
-    # 创建图像窗口
-    plt.figure()
-    plt.imshow(data)
-    # 是否显示网格
-    if grid:
-        plt.xticks(np.arange(-.5, img_w))
-        plt.yticks(np.arange(-.5, img_h))
-        plt.grid(linewidth=grid_width)
-    # 保存图像并关闭窗口
-    plt.savefig(filename, format=format)
-    plt.close()
+
 
 # 处理设备数据（4月份的数据处理方式）
 def oect_data_proc_04(path, device_tested_number):
@@ -101,21 +85,8 @@ def oect_data_proc_std(path, device_test_cnt, num_pulse=5):
 
     return device_excel
 
-# 数据二值化处理，阈值大于给定比例的最大值的地方为1，否则为0
-def binarize_dataset(data, threshold):
-    data = torch.where(data > threshold * data.max(), 1, 0)
-    return data
 
-# 重新调整数据形状
-def reshape(data, num_pulse):
-    num_data, h, w = data.shape
-    # 根据脉冲数重新划分数据
-    new_data = []
-    for i in range(int(w / num_pulse)):
-        new_data.append(data[:, :, i * num_pulse: (i+1) * num_pulse])
 
-    new_data = torch.cat(new_data, dim=1)  # 将切分好的数据合并
-    return new_data
 
 # 利用设备数据提取图像特征
 def rc_feature_extraction(data, device_data, device_tested_number, num_pulse, padding=False):
@@ -190,15 +161,6 @@ def write_log(save_dir_name, log):
     with open(log_file_name, 'a') as f:
         f.writelines(log)
 
-# 寻找最接近的值
-def find_nearest(value_array, query_mat):
-    query_mat_stack = np.tile(query_mat, [value_array.shape[0], 1, 1]).transpose(1, 2, 0)
-
-    # 计算差值并找到最小的差值索引
-    differnces = query_mat_stack - value_array
-    indices = np.argmin(np.abs(differnces), axis=-1)
-    values = value_array[indices]
-    return values
 
 # 合并上行和下行的条件
 def conds_combine(conds_up, conds_down):
@@ -214,6 +176,18 @@ def w2c_mapping(weight, conds, weights_limit):
     a = (conds.max() - conds.min()) / (weight_clipped.max() - weight_clipped.min()) 
     b = conds.min() - weight_clipped.min() * a
     return a.item(), b.item()
+
+# 寻找最接近的值
+def find_nearest(value_array, query_mat):
+    # 为每个查询点扩展value_array以匹配形状
+    query_mat_stack = np.tile(query_mat, [value_array.shape[0], 1, 1]).transpose(1, 2, 0)
+
+    # 计算与每个value的差异，并找到差异最小的索引
+    differences = query_mat_stack - value_array
+    indices = np.argmin(np.abs(differences), axis=-1)
+    # 返回与查询值最接近的value_array中的值
+    values = value_array[indices]
+    return values
 
 # 将权重值转换为设备条件
 def weight2cond(weight, conds, a, b):

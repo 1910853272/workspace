@@ -2,7 +2,19 @@ import torch
 import torch.nn as nn
 import numpy as np
 import sys
-import utility.utils as utils
+
+
+# 寻找最接近的值
+def find_nearest(value_array, query_mat):
+    # 为每个查询点扩展value_array以匹配形状
+    query_mat_stack = np.tile(query_mat, [value_array.shape[0], 1, 1]).transpose(1, 2, 0)
+
+    # 计算与每个value的差异，并找到差异最小的索引
+    differences = query_mat_stack - value_array
+    indices = np.argmin(np.abs(differences), axis=-1)
+    # 返回与查询值最接近的value_array中的值
+    values = value_array[indices]
+    return values
 
 # 定义一个自定义的模型类，继承自torch.nn.Module
 class model(nn.Module):
@@ -128,9 +140,9 @@ class model(nn.Module):
             else:
                 # 根据导通条件的方向，寻找最近的导通条件值
                 if pos_sign:
-                    idx, value = utils.find_nearest(array=self.conds_up, key=c)
+                    idx, value = find_nearest(array=self.conds_up, key=c)
                 else:
-                    idx, value = utils.find_nearest(array=self.conds_down, key=c)
+                    idx, value = find_nearest(array=self.conds_down, key=c)
                 indices_flatten[i] = idx
                 cond_flatten[i] = value
 

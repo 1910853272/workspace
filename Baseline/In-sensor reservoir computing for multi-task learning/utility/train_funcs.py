@@ -7,8 +7,6 @@ import torch.nn.functional as F
 from sklearn.metrics import confusion_matrix
 from tqdm import tqdm
 import sys
-sys.path.append('C:\\Users\\19108\Desktop\Project\Memristor\Wearable In-Sensor Reservoir Computing')
-import utility.utils as utils
 import time
 
 # 获取数据集的统计信息，包括均值、标准差、最大值和最小值

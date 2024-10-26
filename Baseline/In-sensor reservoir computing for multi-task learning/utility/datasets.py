@@ -6,9 +6,41 @@ import matplotlib.pyplot as plt
 import cv2
 import os
 import sys
-sys.path.append('C:\\Users\\19108\Desktop\Project\Memristor\Wearable In-Sensor Reservoir Computing')
-from utility.utils import binarize_dataset, single_fig_show, reshape
 import copy
+
+# 数据二值化处理，阈值大于给定比例的最大值的地方为1，否则为0
+def binarize_dataset(data, threshold):
+    data = torch.where(data > threshold * data.max(), 1, 0)
+    return data
+
+# 重新调整数据形状
+def reshape(data, num_pulse):
+    num_data, h, w = data.shape
+    # 根据脉冲数重新划分数据
+    new_data = []
+    for i in range(int(w / num_pulse)):
+        new_data.append(data[:, :, i * num_pulse: (i+1) * num_pulse])
+
+    new_data = torch.cat(new_data, dim=1)  # 将切分好的数据合并
+    return new_data
+
+# 显示单个图像并保存
+def single_fig_show(data, filename, save_dir, grid=False, grid_width=2, format='png'):
+    # 生成完整的保存路径和文件名
+    filename = os.path.join(save_dir, filename)
+    filename = filename + '.' + format
+    img_h, img_w = data.shape[0], data.shape[1]
+    # 创建图像窗口
+    plt.figure()
+    plt.imshow(data)
+    # 是否显示网格
+    if grid:
+        plt.xticks(np.arange(-.5, img_w))
+        plt.yticks(np.arange(-.5, img_h))
+        plt.grid(linewidth=grid_width)
+    # 保存图像并关闭窗口
+    plt.savefig(filename, format=format)
+    plt.close()
 
 # 自定义数据集类，用于加载和预处理简单的图像数据集
 class SimpleDataset(torch.utils.data.Dataset):
