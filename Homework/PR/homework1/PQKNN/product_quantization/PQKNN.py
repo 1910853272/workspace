@@ -1,79 +1,95 @@
-# -*- coding: utf-8 -*-
-__author__ = 'Jeroen Van Der Donckt'
-
 import multiprocessing
 from typing import Callable
-
 import numpy as np
 from sklearn.cluster import KMeans
 
+# 从其他模块导入的实用函数
 from .util import log_nb_clusters_to_np_int_type, squared_euclidean_dist
 
 
 class ProductQuantizationKNN:
+    """
+    使用乘积量化（Product Quantization, PQ）加速最近邻搜索的 k 近邻（k-NN）算法实现。
+    该方法将特征向量分成多个部分，并使用 KMeans 聚类进行压缩，以加速距离计算。
+    """
 
     def __init__(self, n: int, c: int):
-        """ Constructs a new instance of PQKNN.
-
-        :param n: the amount of subvectors
-        :param c: determines the amount of clusters for KMeans, i.e., k = 2**c.
         """
-        self.n = n
-        self.k = 2 ** c
-        self.int_type = log_nb_clusters_to_np_int_type(c)
-        self.subvector_centroids = {}  # Dict storing each KMeans centroids at the partition_idx, filled in compress()
-        self.random_state = 420
-        # The field below are initialized in the methods of ProductQuantizationKNN
-        # self.partition_size = -1 # initialized in compress()
-        # self.train_labels = [] # initialized in compress()
-        # self.compressed_data = [[]] # initialized in compress()
+        初始化 PQKNN 对象。
+
+        :param n: 将原始数据分成的子向量个数。
+        :param c: 用于确定 KMeans 聚类数量的指数，即 k = 2**c。
+        """
+        self.n = n  # 子向量的个数
+        self.k = 2 ** c  # 每个子向量的聚类数
+        self.int_type = log_nb_clusters_to_np_int_type(c)  # 用于存储压缩数据的整数类型
+        self.subvector_centroids = {}  # 用于存储每个分区的质心的字典
+        self.random_state = 420  # KMeans 的随机种子，确保结果可复现
 
     def _get_data_partition(self, train_data, partition_idx):
+        """
+        根据分区索引获取训练数据的特定分区。
+
+        :param train_data: 完整的训练数据。
+        :param partition_idx: 要获取的分区索引。
+        :return: 对应分区的训练数据切片。
+        """
         partition_start = partition_idx * self.partition_size
         partition_end = (partition_idx + 1) * self.partition_size
         train_data_partition = train_data[:, partition_start:partition_end]
         return train_data_partition
 
     def _compress_partition(self, partition_idx: int, train_data_partition):
-        km = KMeans(n_clusters=self.k, n_init=1, random_state=self.random_state) 
+        """
+        使用 KMeans 对数据分区进行压缩。
+
+        :param partition_idx: 分区索引。
+        :param train_data_partition: 要压缩的数据分区。
+        :return: 分区索引、压缩后的数据和聚类质心。
+        """
+        km = KMeans(n_clusters=self.k, n_init=1, random_state=self.random_state)  # 使用 KMeans 聚类
         compressed_data_partition = km.fit_predict(train_data_partition).astype(self.int_type)
         partition_centroids = km.cluster_centers_
         return partition_idx, compressed_data_partition, partition_centroids
 
     def compress(self, train_data: np.ndarray, train_labels: np.ndarray):
-        """ Compress the given training data via the product quantization method.
+        """
+        使用产品量化对给定的训练数据进行压缩。
 
-        :param train_data: the training examples, a 2D array where each row represents a training sample.
-        :param train_labels: the labels for the training data (a 1D array).
+        :param train_data: 2D 数组，每一行代表一个训练样本。
+        :param train_labels: 与训练样本对应的 1D 标签数组。
         """
         nb_samples = len(train_data)
-        assert nb_samples == len(train_labels), 'The number of train samples do not match the length of the labels'
-        self.train_labels = train_labels
-        self.compressed_data = np.empty(shape=(nb_samples, self.n), dtype=self.int_type)
+        assert nb_samples == len(train_labels), "样本数量与标签数量不匹配。"
+        self.train_labels = train_labels  # 存储标签
+        self.compressed_data = np.empty(shape=(nb_samples, self.n), dtype=self.int_type)  # 初始化压缩数据
 
-        d = len(train_data[0])
-        self.partition_size = d // self.n
+        d = len(train_data[0])  # 数据的维度
+        self.partition_size = d // self.n  # 每个子向量分区的大小
 
+        # 使用多进程并行化压缩各个分区
         with multiprocessing.Pool() as pool:
-            params = [(partition_idx, self._get_data_partition(train_data, partition_idx)) for partition_idx in
-                      range(self.n)]
-            kms = pool.starmap(self._compress_partition, params)
+            params = [(partition_idx, self._get_data_partition(train_data, partition_idx)) for partition_idx in range(self.n)]
+            kms = pool.starmap(self._compress_partition, params)  # 并行运行压缩
+            # 存储压缩数据和质心
             for (partition_idx, compressed_data_partition, partition_centroids) in kms:
                 self.compressed_data[:, partition_idx] = compressed_data_partition
                 self.subvector_centroids[partition_idx] = partition_centroids
 
     def predict_single_sample(self, test_sample: np.ndarray, nearest_neighbors: int,
                               calc_dist: Callable[[np.ndarray, np.ndarray], np.ndarray] = squared_euclidean_dist):
-        """ Predicts the label of the given test sample based on the PQKNN algorithm
+        """
+        使用产品量化 k-NN 算法预测单个样本的标签。
 
-        :param test_sample: the test sample (a 1D array).
-        :param nearest_neighbors: the k in kNN.
-        :param calc_dist: the distance function that should be used. Defaults to squared euclidean distance.
-        :return: the predicted label.
+        :param test_sample: 要分类的 1D 样本数组。
+        :param nearest_neighbors: k 近邻中考虑的邻居数。
+        :param calc_dist: 计算距离的函数，默认为平方欧几里得距离。
+        :return: 预测的标签。
         """
         assert hasattr(self, 'compressed_data') and hasattr(self, 'train_labels'), \
-            'There is no stored compressed data, therefore PQKNN can not do a k-NN search'
-        # Compute table containing the distances of the sample to the centroids of each partition
+            "没有可用的压缩数据，无法进行 k-NN 搜索。"
+
+        # 计算测试样本与每个分区质心之间的距离
         distances = np.empty(shape=(self.k, self.n), dtype=np.float64)
         for partition_idx in range(self.n):
             partition_start = partition_idx * self.partition_size
@@ -82,34 +98,34 @@ class ProductQuantizationKNN:
             centroids_partition = self.subvector_centroids[partition_idx]
             distances[:, partition_idx] = calc_dist(test_sample_partition, centroids_partition)
 
-        # Calculate (approximate) distance to stored data
+        # 计算所有训练样本的近似距离
         nb_stored_samples = len(self.compressed_data)
-        # distance_sums = np.sum([distances[:,partition_idx][self.compressedData[:,partition_idx]] for partition_idx in range(self.n)], axis=0) -> SLOWER THAN THE CODE BELOW
         distance_sums = np.zeros(shape=nb_stored_samples)
         for partition_idx in range(self.n):
             distance_sums += distances[:, partition_idx][self.compressed_data[:, partition_idx]]
 
-        # Select label among k nearest neighbors
-        # https://stackoverflow.com/questions/34226400/find-the-index-of-the-k-smallest-values-of-a-numpy-array
+        # 找到 k 个最近的邻居
         indices = np.argpartition(distance_sums, nearest_neighbors)
         labels = self.train_labels[indices][:nearest_neighbors]
         unique_labels, counts = np.unique(labels, return_counts=True)
-        # 1) If there is only 1 label (among the nearest neighbors)
+
+        # 确定出现频率最高的标签
         if len(unique_labels) == 1:
+            return unique_labels[0]  # 只有一个唯一的标签
+
+        # 按频率排序，遇到平局时根据距离打破
+        sorted_idxs = np.argsort(counts)[::-1]
+        unique_labels = unique_labels[sorted_idxs]
+        counts = counts[sorted_idxs]
+
+        if counts[0] != counts[1]:  # 无平局
             return unique_labels[0]
-        # 2) Else -> there are 2 or more labels (among the nearest neighbors)
-        sorted_idxs = np.argsort(counts)[::-1]  # Get idxs from max to min number of counts
-        unique_labels = unique_labels[sorted_idxs]  # Sorted labels in descending order of their frequency
-        counts = counts[sorted_idxs]  # Sorted counts in descending order of their value
-        # 2.1) If there is no tie
-        if counts[0] != counts[1]:
-            return unique_labels[0]
-        # 2.2) If there is an tie
+
+        # 如果出现平局，选择总距离最小的标签
         max_count = counts[0]
         idx = 0
         min_distance = float('inf')
         selected_label = None
-        # Select label with minimal summed distance amongst the labels with frequency == max_count
         while idx < len(unique_labels) and counts[idx] == max_count:
             label = unique_labels[idx]
             label_indices = np.where(labels == label)
@@ -122,15 +138,17 @@ class ProductQuantizationKNN:
 
     def predict(self, test_data: np.ndarray, nearest_neighbors: int,
                 calc_dist: Callable[[np.ndarray, np.ndarray], np.ndarray] = squared_euclidean_dist) -> np.ndarray:
-        """ Predicts the label of the given test samples based on the PQKNN algorithm
-
-        :param test_data: the samples, a 2D array where each row represents a sample.
-        :param nearest_neighbors: the k in kNN.
-        :param calc_dist: the distance function that should be used. Defaults to squared euclidean distance.
-        :return: the predicted labels.
         """
-        assert test_data.ndim == 2, 'The dimensionality of the test_data should be 2'
-        if len(test_data) > 2000:  # Fuzzy rule to decide whether or not multiple threads should be spawned
+        使用产品量化 k-NN 算法预测一组测试样本的标签。
+
+        :param test_data: 2D 数组，每一行是一个待分类的样本。
+        :param nearest_neighbors: k 近邻中考虑的邻居数。
+        :param calc_dist: 计算距离的函数，默认为平方欧几里得距离。
+        :return: 预测的标签数组。
+        """
+        assert test_data.ndim == 2, "test_data 必须是一个 2D 数组。"
+        # 对于大型数据集使用多进程
+        if len(test_data) > 2000:
             with multiprocessing.Pool() as pool:
                 params = [(test_sample, nearest_neighbors, calc_dist) for test_sample in test_data]
                 preds = pool.starmap(self.predict_single_sample, params)
