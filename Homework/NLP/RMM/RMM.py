@@ -89,7 +89,7 @@ def precision_recall_f1(output, target):
         else:
             o.append((o[-1][-1], index))
         o = set(o)  # 转换为集合
-        o.remove((0, 0))  # 移除初始值
+        o.discard((0, 0))  # 移除初始值
         return o
 
     o = extract_index_pair(output)
@@ -108,7 +108,7 @@ def precision_recall_f1(output, target):
     f1 = (2 * precision * recall) / (precision + recall)
     return precision, recall, f1
 
-def build_corpus_and_testing_text(filename, training_ratio=0.7):
+def build_corpus_and_testing_text(filename, training_ratio=0.5):
     '''
     构建词库和测试文本
 
@@ -238,7 +238,13 @@ def run(split_words_function, testing_text, corpus):
     plt.xlabel('recall')
     plt.ylabel('frequency')
     plt.title('recall')
-    plt.show()
+
+    # 保存图像到文件
+    plt.tight_layout()
+    plt.savefig('precision_recall_histograms.png', dpi=300)
+    plt.close()
+    print('Histogram saved as precision_recall_histograms.png')
+
     return results, a, b, c
 
 if __name__ == '__main__':
