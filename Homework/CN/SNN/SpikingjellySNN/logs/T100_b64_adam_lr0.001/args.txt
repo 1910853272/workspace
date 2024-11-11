@@ -1,0 +1,2 @@
+Namespace(T=100, device='cuda:0', b=64, epochs=100, j=4, data_dir='./data', out_dir='./logs', resume=None, amp=False, opt='adam', momentum=0.9, lr=0.001, tau=2.0)
+C:\Users\19108\Desktop\workspace\Homework\CN\SNN\SpikingjellySNN\spikingjellyMNIST.py
