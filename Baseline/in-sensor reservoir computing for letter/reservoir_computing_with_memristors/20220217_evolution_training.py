@@ -72,7 +72,7 @@ def output_row(initial_state, input_signal):
         else:
             # 如果输入信号小于等于0，应用其他变化，限制在1到10之间
             a.append(np.clip(a[i], 1, 10) * (3 - np.exp(1)))
-    return a
+    return np.array(a).flatten()  # 保证输出为一维数组
 
 
 # 创建一个空矩阵用于存储输出数据
@@ -205,7 +205,7 @@ for i, letter in enumerate(d.keys()):
     output = []
     for row in d[letter]:
         output.append(output_row(initial_state, row))  # 生成输出行
-    X[i, :] = np.concatenate(output)[:, 0]  # 合并输出行到输入矩阵
+    X[i, :] = np.concatenate(output)  # 将output中的数据合并成单一的一维数组
 
 w, b, losses = fit(X, np.arange(10), 0.1, 10, 100)  # 训练模型
 plt.figure()
@@ -244,16 +244,16 @@ confusion_matrix = np.zeros((10, 10))  # 创建空混淆矩阵
 for num_letter in range(10):
     for i in range(5):
         for j in range(5):
-            test_letter = d[cc[num_letter].split('.')[0]].copy()  # 复制字母数据
+            test_letter = d[letters[num_letter].split('.')[0]].copy()  # 复制字母数据
             test_letter[i, j] = 1 if not test_letter[i, j] else 0  # 随机扰动数据
             initial_state = np.random.random(1)  # 初始电导
             output = []
             for row in np.array(test_letter):
                 output.append(output_row(initial_state, row))  # 生成输出行
-            X[5 * i + j, :] = np.concatenate(output)[:, 0]  # 合并输出行
+            X[5 * i + j, :] = np.concatenate(output)  # 将output中的数据合并成单一的一维数组
 
     predictions = predict(X, w, b)  # 预测当前字母
     for n_lett, prob in Counter(predictions).items():
         confusion_matrix[num_letter, n_lett] = prob / 25 * 100  # 更新混淆矩阵
 plt.figure()
-plt.imshow(confusion_matrix)  # 显示混淆矩阵
+plt.imshow(confusion_matrix)
