@@ -7,6 +7,8 @@ from matplotlib import pyplot as plt  # 导入Matplotlib用于绘图
 from PySpice.Spice.Netlist import Circuit
 from PySpice.Unit import *
 
+
+
 # 创建一个电路实例，用于使用Millman定理分析电路
 circuit = Circuit("Millman's theorem")
 
@@ -53,7 +55,7 @@ print('节点总数为:', len(dict_nodes))
 NV = Nx * Ny + 100
 
 # 在电路中添加一个输入电压源，连接到NV节点和地
-circuit.V('input', NV, circuit.gnd, 10@u_V)
+circuit.V('input', NV, circuit.gnd, 10 @u_V)
 
 # 将电阻连接到网格中的节点
 i = 0
@@ -61,7 +63,7 @@ i = 0
 for x, y in G.nodes():
     if x == 0:  # 若节点在左边界
         circuit.R('el' + str(i), NV,
-                  get_key((x, y), dict_nodes), 0.001@u_kOhm)
+                  get_key((x, y), dict_nodes), 0.001 @u_kOhm)
         i += 1  # 增加电阻编号
 
 # 遍历图中的边，为每一条边添加一个电阻连接两个相邻节点
