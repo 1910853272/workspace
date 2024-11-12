@@ -42,6 +42,7 @@ for i, lett in enumerate(letters):
 
 # 调整子图之间的间距
 plt.subplots_adjust(wspace=0.05, hspace=0.05)
+plt.show()  # 显示字母图像
 
 
 # %% 模拟memristor的行为
@@ -92,7 +93,10 @@ for nl, lett in enumerate(d.keys()):
 matrix[:, 30] = 2.5 * np.random.random((10,))
 
 # 使用图像显示矩阵内容
-ax[1].imshow(matrix, extent=[10, 1, 1, 31], aspect='auto')
+fig, ax = plt.subplots()
+cax = ax.imshow(matrix, extent=[10, 1, 1, 31], aspect='auto', cmap='viridis')
+fig.colorbar(cax)
+plt.show()  # 显示矩阵内容
 
 
 # %% One-hot编码和softmax函数
@@ -189,7 +193,7 @@ def fit(X, y, lr, c, epochs):
         w -= lr * w_grad
         b -= lr * b_grad
 
-        np.save('w' + str(epoch) + '.npy', w)  # 保存权重
+        # np.save('w' + str(epoch) + '.npy', w)  # 保存权重
         loss = -np.mean(np.log(y_hat[np.arange(len(y)), y]))  # 计算损失
         losses.append(loss)
 
@@ -210,6 +214,10 @@ for i, letter in enumerate(d.keys()):
 w, b, losses = fit(X, np.arange(10), 0.1, 10, 100)  # 训练模型
 plt.figure()
 plt.plot(losses)  # 绘制损失曲线
+plt.title("Training Loss")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.show()  # 显示损失曲线
 
 
 # %% 预测函数
@@ -255,5 +263,11 @@ for num_letter in range(10):
     predictions = predict(X, w, b)  # 预测当前字母
     for n_lett, prob in Counter(predictions).items():
         confusion_matrix[num_letter, n_lett] = prob / 25 * 100  # 更新混淆矩阵
+
 plt.figure()
-plt.imshow(confusion_matrix)
+plt.imshow(confusion_matrix, cmap="viridis")
+plt.colorbar()
+plt.title("Confusion Matrix")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()  # 显示混淆矩阵
