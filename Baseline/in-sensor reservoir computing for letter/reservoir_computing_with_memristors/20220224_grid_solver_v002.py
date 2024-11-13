@@ -7,8 +7,6 @@ from matplotlib import pyplot as plt  # 导入Matplotlib用于绘图
 from PySpice.Spice.Netlist import Circuit
 from PySpice.Unit import *
 
-
-
 # 创建一个电路实例，用于使用Millman定理分析电路
 circuit = Circuit("Millman's theorem")
 
