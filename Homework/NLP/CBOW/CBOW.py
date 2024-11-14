@@ -28,14 +28,14 @@ def input(mode):
 
     if mode == "zh":
         stop_words = load_stop_words()
-        with open('../data/zh_test.txt', encoding="utf-8") as f:
+        with open('./data/zh_test.txt', encoding="utf-8") as f:
             data = f.read()
             text = data.split()                              # 以空格分割
             for word in text:                                # 数组遍历
                 if word not in stop_words:                   # 中文语料需要去掉一些停止词
                     raw_text.append(word)
     else:
-        with open('../data/en.txt') as f:
+        with open('./data/en.txt') as f:
             data = f.read()
         raw_text = data.split()                              # 以空格分割
 
