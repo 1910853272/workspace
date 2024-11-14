@@ -177,7 +177,7 @@ def fit(X, y, lr, c, epochs):
     b = np.random.random(c)  # 随机初始化偏置
     losses = []  # 存储损失值的列表
 
-    np.save('initial_w.npy', w)  # 保存初始权重
+    # np.save('initial_w.npy', w)  # 保存初始权重
 
     # 训练循环
     for epoch in range(epochs):
