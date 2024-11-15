@@ -6,192 +6,174 @@ import torch.optim as optim
 from matplotlib import pyplot as plt
 from sklearn.decomposition import PCA
 from tqdm import tqdm, trange
+import matplotlib
 
-# 初始化矩阵
-torch.manual_seed(1)  # 这个还不知道要不要删除
+# 设置中文字体，避免中文乱码
+matplotlib.rcParams['font.family'] = 'SimHei'  # 或者选择你系统中已有的其他字体
+matplotlib.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
 
+# 设置随机种子，以保证每次运行时结果相同
+torch.manual_seed(1)
 
-def load_stop_words():
+# 加载停用词
+def load_stop_words(file_path='./data/stopwords.txt'):
+    """读取停用词文件，返回停用词列表"""
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read().splitlines()
+
+# 文本预处理函数
+def preprocess_text(file_path, mode="en"):
     """
-        停用词是指在信息检索中，
-        为节省存储空间和提高搜索效率，
-        在处理自然语言数据（或文本）之前或之后
-        会自动过滤掉某些字或词
+    处理输入文本，将其分割为单词，并去除停用词
+    :param file_path: 输入文本文件路径
+    :param mode: 'zh' 为中文，'en' 为英文
+    :return: 词汇表大小，词到索引的映射，索引到词的映射，处理后的数据
     """
-    with open('../data/stopwords.txt', "r", encoding="utf-8") as f:
-        return f.read().split("\n")
-
-
-def input(mode):
-    print("\n=================1.数据预处理阶段=======================")
-    raw_text = []
+    raw_text = []  # 用于存储处理后的文本
 
     if mode == "zh":
-        stop_words = load_stop_words()
-        with open('./data/zh_test.txt', encoding="utf-8") as f:
-            data = f.read()
-            text = data.split()                              # 以空格分割
-            for word in text:                                # 数组遍历
-                if word not in stop_words:                   # 中文语料需要去掉一些停止词
-                    raw_text.append(word)
+        stop_words = load_stop_words()  # 加载中文停用词
+        with open(file_path, encoding="utf-8") as f:
+            text = f.read().split()  # 以空格分割文本
+            raw_text = [word for word in text if word not in stop_words]  # 去除停用词
     else:
-        with open('./data/en.txt') as f:
-            data = f.read()
-        raw_text = data.split()                              # 以空格分割
+        with open(file_path) as f:
+            raw_text = f.read().split()  # 以空格分割英文文本
 
-    print("raw_text=", raw_text)                             # raw_text数组存储分割结果
+    print("raw_text=", raw_text[:10])  # 打印处理后的前10个单词
 
-    vocab = set(raw_text)                                    # 删除重复元素/单词
-    vocab_size = len(vocab)                                  # 这里的size是去重之后的词表大小
-    word_to_idx = {word: i for i, word in enumerate(vocab)}  # 由单词索引下标
-    idx_to_word = {i: word for i, word in enumerate(vocab)}  # 由下标索引单词
+    # 构建词汇表
+    vocab = set(raw_text)
+    vocab_size = len(vocab)
+    word_to_idx = {word: idx for idx, word in enumerate(vocab)}
+    idx_to_word = {idx: word for word, idx in word_to_idx.items()}
 
-    data = []                                                # cbow那个词表，即{[w1,w2,w4,w5],"label"}这样形式
-    for i in range(2, len(raw_text) - 2):  # 类似滑动窗口
-        context = [raw_text[i - 2], raw_text[i - 1],
-                   raw_text[i + 1], raw_text[i + 2]]
+    # 生成上下文-目标数据
+    data = []
+    for i in range(2, len(raw_text) - 2):
+        context = [raw_text[i - 2], raw_text[i - 1], raw_text[i + 1], raw_text[i + 2]]
         target = raw_text[i]
         data.append((context, target))
 
-    print(data[:5])  # (['the', 'present', 'surplus', 'can'], 'food')
+    print(f"Processed data sample: {data[:5]}")
     return vocab_size, word_to_idx, idx_to_word, data
 
+# 将上下文词转换为索引
+def make_context_vector(context, word_to_idx):
+    """将上下文单词转换为索引列表"""
+    return torch.tensor([word_to_idx[word] for word in context], dtype=torch.long)
 
-def make_context_vector(context, word_to_ix):
-    idxs = [word_to_ix[w] for w in context]
-    return torch.tensor(idxs, dtype=torch.long)
-
-
-# 模型结构
+# 定义CBOW模型
 class CBOW(nn.Module):
     def __init__(self, vocab_size, embedding_dim):
         super(CBOW, self).__init__()
-        self.embeddings = nn.Embedding(vocab_size, embedding_dim)
-        self.proj = nn.Linear(embedding_dim, 128)
-        self.output = nn.Linear(128, vocab_size)
+        self.embeddings = nn.Embedding(vocab_size, embedding_dim)  # 词嵌入层
+        self.proj = nn.Linear(embedding_dim, 128)  # 线性投影层
+        self.output = nn.Linear(128, vocab_size)  # 输出层
 
     def forward(self, inputs):
-        embeds = sum(self.embeddings(inputs)).view(1, -1) # 这里为什么要求和啊？a=embedding(input)是去embedding.weight中取对应index的词向量！
-        out = F.relu(self.proj(embeds))
-        out = self.output(out)
-        nll_prob = F.log_softmax(out, dim=-1)
-        return nll_prob
+        # 将上下文词的嵌入向量求和并投影到128维空间，再通过输出层预测目标词
+        embeds = self.embeddings(inputs).sum(dim=0).view(1, -1)  # 求和后调整维度
+        out = F.relu(self.proj(embeds))  # 线性投影后通过ReLU激活
+        out = self.output(out)  # 输出层计算目标词的对数概率
+        return F.log_softmax(out, dim=-1)
 
-
-def train():
-    print("=================2.模型训练阶段=======================")
+# 训练函数
+def train(model, data, loss_function, optimizer, device):
+    """训练模型，返回训练后的词向量"""
+    losses = []
+    model.train()
     for epoch in trange(epochs):
         total_loss = 0
         for context, target in tqdm(data):
-            context_vector = make_context_vector(context, word_to_idx).to(device)  # 把训练集的上下文和标签都放到cpu中
-            target = torch.tensor([word_to_idx[target]])
-            model.zero_grad()                                                      # 梯度清零
-            train_predict = model(context_vector)                                  # 开始前向传播
-            loss = loss_function(train_predict, target)
-            loss.backward()                                                        # 反向传播
-            optimizer.step()                                                       # 更新参数
+            context_vector = make_context_vector(context, word_to_idx).to(device)
+            target = torch.tensor([word_to_idx[target]], dtype=torch.long).to(device)
+
+            optimizer.zero_grad()
+            prediction = model(context_vector)
+            loss = loss_function(prediction, target)
+            loss.backward()
+            optimizer.step()
+
             total_loss += loss.item()
-        losses.append(total_loss)                                                  # 更新损失
 
-    print("losses-=", losses)
+        losses.append(total_loss)
+        print(f"Epoch {epoch + 1}/{epochs}, Loss: {total_loss}")
+
+    # 获取训练后的词向量矩阵
     W = model.embeddings.weight.cpu().detach().numpy()
-    return W
+    return W, losses
 
+# 保存词向量到文件
+def save_word_vectors(W, word_to_idx, mode="en"):
+    """保存词向量到文件"""
+    word_2_vec = {word: W[idx] for word, idx in word_to_idx.items()}
 
-def output(W, mode):
-    print("=================4.输出处理=======================")
-    word_2_vec = {}  # 生成词嵌入字典，即{单词1:词向量1,单词2:词向量2...}的格式
-    for word in word_to_idx.keys():
-        word_2_vec[word] = W[word_to_idx[word], :]  # 词向量矩阵中某个词的索引所对应的那一列即为所该词的词向量
+    file_path = f"./output/{mode}_wordvec.txt"
+    with open(file_path, 'w', encoding='utf-8') as f:
+        for word, vec in word_2_vec.items():
+            f.write(f'"{word}": {vec.tolist()}\n')
+    print(f"Word vectors saved to {file_path}")
 
-    # 将生成的字典写入到文件中
-    if mode == "zh":
-        with open("../output/en_wordvec.txt", 'w', encoding='utf-8') as f:  # 中文字符集要设置为utf-8，不然会乱码
-            for key in word_to_idx.keys():
-                f.write('\n')
-                f.writelines('"' + str(key) + '":' + str(word_2_vec[key]))
-            f.write('\n')
-    else:
-        with open("../output/en_wordvec.txt", 'w') as f:
-            for key in word_to_idx.keys():
-                f.write('\n')
-                f.writelines('"' + str(key) + '":' + str(word_2_vec[key]))
-            f.write('\n')
+# 使用PCA降维并可视化词向量
+def visualize_word_vectors(W, word_to_idx, mode="en"):
+    """使用PCA将词向量降维到2D并可视化"""
+    pca = PCA(n_components=2)
+    reduced_vecs = pca.fit_transform(W)
 
-    print("词向量已保存")
+    plt.figure(figsize=(16, 16))
 
+    for idx, word in enumerate(word_to_idx.keys()):
+        x, y = reduced_vecs[idx]
+        plt.scatter(x, y, marker='o', color='b', alpha=0.5)
+        plt.annotate(word, (x, y), fontsize=10, alpha=0.7)
 
-def show(W,mode):  # 将词向量降成二维之后，在二维平面绘图
-    print("=================5.可视化阶段=======================")
-    pca = PCA(n_components=2)  # 数据降维
-    principalComponents = pca.fit_transform(W)
-    word2ReduceDimensionVec = {}  # 降维后在生成一个词嵌入字典，即即{单词1:(维度一，维度二),单词2:(维度一，维度二)...}的格式
+    plt.title(f"Word Vectors ({mode})", fontsize=20)
+    plt.xlabel('PCA Component 1', fontsize=14)
+    plt.ylabel('PCA Component 2', fontsize=14)
 
-    for word in word_to_idx.keys():
-        word2ReduceDimensionVec[word] = principalComponents[word_to_idx[word], :]
-
-    plt.figure(figsize=(20, 20))  # 将词向量可视化
-    count = 0
-    if mode=="zh":
-        for word, wordvec in word2ReduceDimensionVec.items():
-            if count < 1000:
-                plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
-                plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号，否则负号会显示成方块
-                plt.scatter(wordvec[0], wordvec[1])
-                plt.annotate(word, (wordvec[0], wordvec[1]))
-                count += 1
-    else:
-        for word, wordvec in word2ReduceDimensionVec.items():
-            if count < 1000:  # 只画出1000个，太多显示效果很差
-                plt.scatter(wordvec[0], wordvec[1])
-                plt.annotate(word, (wordvec[0], wordvec[1]))
-                count += 1
+    # Save the image to a file
+    plt.savefig(f'./output/{mode}_word_vectors.png', bbox_inches='tight', dpi=300)
     plt.show()
+    print(f"Word vector visualization saved to ./output/{mode}_word_vectors.png")
 
+# 测试函数，根据输入的上下文预测目标词
+def test(model, word_to_idx, device):
+    """根据上下文词，预测目标词"""
+    model.eval()  # 设置为评估模式
+    with torch.no_grad():
+        while True:
+            context_input = input("请输入上下文：").split()
+            context_vector = make_context_vector(context_input, word_to_idx).to(device)
+            prediction = model(context_vector)
+            top_k = torch.topk(prediction, 10)
+            print(f"Top 10 predictions: {top_k}")
 
-
-def test(mode):
-    print("=================3.测试阶段=======================")
-
-    if mode =="zh":
-        context = ['粮食', '出现', '过剩', '恰好']
-    else:
-        context = ['present', 'food', 'can', 'specifically']
-
-    context_vector = make_context_vector(context, word_to_idx).to(device)
-    predict = model(context_vector).data.cpu().numpy()  # 预测的值
-    # print('Raw text: {}\n'.format(' '.join(raw_text)))
-    print('Test Context: {}'.format(context))
-    max_idx = np.argmax(predict)  # 返回最大值索引
-    print('Prediction: {}'.format(idx_to_word[max_idx]))  # 输出预测的值
-    print("CBOW embedding'weight=", model.embeddings.weight)  # 获取词向量，这个Embedding就是我们需要的词向量，他只是一个模型的一个中间过程
-
-
+# 主函数
 if __name__ == '__main__':
-    # -------------------0.参数设置--------------------#
-    # 训练中文时注释掉英文即可
-    #mode = "zh"
-    mode = "en"
+    # 参数设置
+    mode = "zh"  # 可选择 'zh' 或 'en'
+    learning_rate = 0.001
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')  # 自动选择设备
+    embedding_dim = 100
+    epochs = 10
 
-    learning_rate = 0.001                                                       # 学习率 超参数
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')       # 放cuda或者cpu里，我的电脑不支持cuda
-    context_size = 2                                                            # 上下文信息，上下文各2个词，中心词作为标签
-    embedding_dim = 100                                                         # 词向量维度，一般都是要100-300个之间
-    epochs = 10                                                                 # 训练次数
-    losses = []                                                                 # 存储损失的集合
+    # 加载并处理数据
+    vocab_size, word_to_idx, idx_to_word, data = preprocess_text('./data/zh.txt', mode=mode) # 可选择 'zh' 或 'en'
+
+    # 创建模型和优化器
+    model = CBOW(vocab_size, embedding_dim).to(device)
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate)
     loss_function = nn.NLLLoss()
 
-    # -------------------1.输入与预处理模块---------------------#
-    vocab_size, word_to_idx, idx_to_word, data = input(mode)
+    # 训练模型
+    W, losses = train(model, data, loss_function, optimizer, device)
 
-    # -------------------2.训练模块---------------------------#
-    model = CBOW(vocab_size, embedding_dim).to(device)          # 模型在cup训练
-    optimizer = optim.SGD(model.parameters(), lr=0.001)         # 优化器
+    # 保存词向量
+    save_word_vectors(W, word_to_idx, mode)
 
-    W = train()
-    # -------------------3.测试模块---------------------------#
-    test(mode)
-    # -------------------4.输出处理模块------------------------#
-    output(W, mode)
-    # -------------------5.可视化模块-------------------------#
-    show(W, mode)
+    # 可视化词向量并保存
+    visualize_word_vectors(W, word_to_idx, mode)
+
+    # 测试模型
+    test(model, word_to_idx, device)
