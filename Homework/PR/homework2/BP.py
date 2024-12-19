@@ -1,294 +1,228 @@
-import pandas as pd
 import numpy as np
-import time
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-# 从txt中读取数据集，并把标签转化成one-hot矩阵
-class readData(object):
+def gen_train_data(data_input):
+    """
+    根据输入数据, 生成相应的label, 形成训练数据
+    Parameter:
+        data_input: 输入数据列表 [[类1数据], [类2数据], [类3数据], ...]
+    Return:
+        train_data: 训练用数据列表 [[数据1], [数据2], ...]
+        train_label: 训练用Label列表 [[数据1对应Label], [数据2对应Label], ...]
+    """
+    train_data = []
+    train_label = []
+    for idx, i in enumerate(data_input):
+        for j in i:
+            # 数据列表
+            data = np.array(j)
+            train_data.append(data)
+            # Label列表: 对应类别为1, 其余为0
+            label = np.zeros_like(data)
+            label[idx] = 1
+            train_label.append(label)
 
-    def __init__(self, io='Data.xlsx'):
+    return train_data, train_label
+
+class net:
+    """
+    三层网络类
+    """
+    def __init__(self, train_data, train_label, h_num):
         """
-        io:数据集路径 excel格式
+        网络初始化
+        Parameters:
+            train_data: 训练用数据列表
+            train_label: 训练用Label列表
+            h_num: 隐含层结点数
         """
-        df = pd.read_excel(io)
-        all_data = df.values  # 所有数据 特征+标签
-        permutation = np.random.permutation(all_data.shape[0])
-        all_data = all_data[permutation, :]
-        self.data = all_data[:, 0:3]  # 提取特征集
-        self.label = all_data[:, 3]  # 提取标签
+        # 初始化数据
+        self.train_data = train_data
+        self.train_label = train_label
+        self.h_num = h_num
+        # 随机初始化权重矩阵
+        self.w_ih = np.random.rand(train_data[0].shape[0], h_num)
+        self.w_hj = np.random.rand(h_num, train_label[0].shape[0])
 
-    def get_train_data(self):
-        train_data = np.hstack((np.ones((self.data.shape[0], 1)), self.data))  # 每个样本的特征最前面都插入1维阈值 1(偏置)
-        train_label = self.label.reshape(-1).astype(int) - 1  # 类别标签从1-3变为0-2，便于转成onw-hot矩阵进行计算
-        # print(train_label)
-        train_y = np.eye(3)[train_label]  # one-hot向量矩阵
-
-        return train_data, train_y
-
-# 激励函数及其导数
-class stimulateFunc(object):
-
-    def __init__(self):
-        """初始化函数 没有任何操作"""
-        pass
-
-    def sigmoid(self, x):
-        return 1 / (1 + np.exp(-x))
-
-    def sigmoid_derivative(self, x):
-        return self.sigmoid(x) * (1 - self.sigmoid(x))
-
-    def tanh(self, x):
-        return np.tanh(x)
-
-    def tanh_derivative(self, x):
-        return 1 - np.power(self.tanh(x), 2)
-
-# 输入层：隐含层结点的激励函数采用双曲正切函数
-class inputLayer(object):
-
-    def __init__(self, input_num=4, hidden_num=3, learning_rate=0.1):
+    def tanh(self, data):
         """
-        搭建神经网络输入层到隐含层的映射
-        采用tanh函数激励
-        需要参数：
-        X:输入的特征矩阵
-        input_num:输入数据维度
-        hidden_num:隐含层节点数
-        learning_rate:学习率/更新步长
-        W_ih:权重矩阵
-        Y_h:激活后输出到隐含层的特征矩阵
+        tanh函数
         """
-        self.X = []  # 输入矩阵
-        self.input_num = input_num  # 需要注意，输入要多一个偏置项
-        self.hidden_num = hidden_num
-        self.learning_rate = learning_rate
+        return (np.exp(data) - np.exp(-data)) / (np.exp(data) + np.exp(-data))
 
-        self.W_ih = np.random.rand(self.input_num, self.hidden_num)  # 随机初始化权重 [0,1)之间 包括偏置的权重
-        self.net = []  # 输入矩阵*当前权重所得节点
-        self.Y_h = []
-
-    def forward(self, X):  # X:输入矩阵(特征+1维偏置)
-        """前向传播"""
-        self.X = X
-        self.net = np.dot(self.X, self.W_ih)  # 乘上权重矩阵
-        self.Y_h = stimulateFunc().tanh(self.net)  # 激励结果
-        return self.Y_h  # 返回激励结果
-
-    def backward(self, delta):
-        """反向传播"""
-        """delta:后一层收集的误差"""
-        temp = stimulateFunc().tanh_derivative(self.net)
-        d_W_ih = np.dot(self.X.T, (delta * temp))  # 计算更新量
-        self.W_ih = self.W_ih + self.learning_rate * d_W_ih  # 更新权重
-        return self.W_ih  # 返回更新后的权重
-
-# 隐藏层：输出层的激励函数采用 sigmoid 函数
-class hiddenLayer(object):
-
-    def __init__(self, hidden_num=3, output_num=3, learning_rate=0.1):
+    def sigmoid(self, data):
         """
-        搭建神经网络隐含层到输出层的映射
-        采用sigmoid函数激励
-        需要参数：
-        Y:输入层传进来的特征矩阵
-        hidden_num:隐含层节点数
-        output_num:输出层节点数
-        learning_rate:学习率/更新步长
-        W_ho:权重矩阵
-        Z_o:输出到输出层的特征矩阵
+        Sigmoid函数
         """
-        self.hidden_num = hidden_num  # 获得隐含层节点数
-        self.output_num = output_num
-        self.learning_rate = learning_rate
+        return 1 / (1 + np.exp(-data))
 
-        self.W_ho = np.random.rand(self.hidden_num, self.output_num)  # 随机初始化权重 [0,1)之间 包括偏置的权重
-        self.net = []
-        self.Z_o = []
-
-    def forward(self, Y):  # Y:上一层输入矩阵
-        """前向传播"""
-        self.Y = Y
-        self.net = np.dot(Y, self.W_ho)  # 乘上权重矩阵
-        # print(temp)
-        self.Z_o = stimulateFunc().sigmoid(self.net)  # 激励结果
-        return self.Z_o  # 返回激励结果
-
-    def backward(self, delta):
-        """反向传播"""
-        """delta:后一层收集的误差"""
-        temp = stimulateFunc().sigmoid_derivative(self.net)
-        delta_ho = delta * temp
-        d_W_ho = np.dot(self.Y.T, delta_ho)  # 计算更新量
-        self.W_ho = self.W_ho + self.learning_rate * d_W_ho  # 更新权重
-        back_delta = np.dot(delta_ho, self.W_ho.T)
-        return back_delta  # 返回传到前一层的误差
-
-# 三层前向神经网络反向传播算法：采用批量方式更新权重
-# 目标函数采用平方误差准则函数MSE
-class bp_model(object):
-    def __init__(self, X, y, epoch, learning_rate, batch_size, hidden_num):
+    def forward(self, data):
         """
-        X:特征
-        y:标签（one-hot矩阵
-        epoch：迭代次数
-        learning_rate：更新步长/学习率
-        batch_size:批量更新数。为1则为单样本更新
-        hidden_num：隐含层节点数
+        前向传播
+        Parameter:
+            data: 单个样本输入数据
+        Return:
+            z_j: 单个输入数据对应的网络输出
+            y_h: 对应的隐含层输出, 用于后续反向传播时权重更新矩阵的计算
         """
-        self.X = X
-        self.y = y
-        self.epoch = epoch
-        self.learning_rate = learning_rate
-        self.batch_size = batch_size
-        self.hidden_num = hidden_num
+        # 计算隐含层输出
+        net_h = np.matmul(data.T, self.w_ih)
+        y_h = self. tanh(net_h)
+        # 计算输出层输出
+        net_j = np.matmul(y_h.T, self.w_hj)
+        z_j = self.sigmoid(net_j)
 
-        self.input_num = X.shape[1]
-        self.output_num = y.shape[1]
+        return z_j, y_h
 
-    def train(self):
-        X_ = self.X
-        Y_ = self.y
-        loss_ = []
-        acc_ = []
-        epoch_ = 0
-        bp = BP_once(self.input_num, self.output_num, self.hidden_num, self.learning_rate)  # 搭建神经网络
-        for i in range(self.epoch):
-            for j in range(X_.shape[0] // self.batch_size):  # 批量更新大小
-                x_ = X_[j * self.batch_size:(j + 1) * self.batch_size, :]
-                y_ = Y_[j * self.batch_size:(j + 1) * self.batch_size, :]
-                bp.training(x_, y_)
-            acc = bp.acc(X_, Y_)
-            loss = bp.MSEloss(X_, Y_)
-            acc_.append(acc)
-            loss_.append(loss)
-            # if i % 100 == 0:
-            #     print('epoch=', i)
-            #     print('loss = %.10f, acc=%.1f' % (loss, acc))
-            if acc == 100:
-                epoch_ = i  # 记录下训练完全正确的迭代次数
-            if loss <= 0.01:
-                print('>>>>>loss has already down to 0.01! Training Terminated!<<<<<')
-                break
-        return loss_, acc_, epoch_
-
-# 三层前向神经网络反向传播算法：单样本方式更新权重
-# 目标函数采用平方误差准则函数MSE
-class BP_once(object):
-    def __init__(self, input_num=4, output_num=3, hidden_num=3, learning_rate=0.01):
+    def backward(self, z, label, eta, y_h, x_i):
         """
-        构造三层前向神经网络
-        进行一次反向传播更新权重
-        误差准则 MSE
-        所需参数：
-        iteration_num：迭代次数
-        learning_rate：更新步长/学习率
-        hidden_num：隐含层节点数
+        反向传播
+        Parameters:
+            z: 前向传播计算的网络输出
+            label: 对应的Label
+            eta: 学习率
+            y_h: 对应的隐含层输出
+            x_i: 对应的输入数据
+        Return:
+            delta_w_hj: 隐含层-输出层权重更新矩阵
+            delta_w_ih: 输入层-隐含层权重更新矩阵
+            error: 样本输出误差, 用于后续可视化
         """
-        self.input_num = input_num
-        self.hidden_num = hidden_num
-        self.output_num = output_num
-        self.learning_rate = learning_rate
-        # 搭建神经网络
-        self.input = inputLayer(self.input_num, self.hidden_num, self.learning_rate)
-        self.hidden = hiddenLayer(self.hidden_num, self.output_num, self.learning_rate)
+        # 矩阵维度整理
+        z = np.reshape(z, (z.shape[0], 1))
+        label = np.reshape(label, (label.shape[0], 1))
+        y_h = np.reshape(y_h, (y_h.shape[0], 1))
+        x_i = np.reshape(x_i, (x_i.shape[0], 1))
+        # 计算输出误差
+        error = np.matmul((label-z).T, (label-z))[0][0]
+        # 计算隐含层-输出层权重更新矩阵
+        error_j = (label - z) * z * (1-z)
+        delta_w_hj = eta * np.matmul(y_h, error_j.T)
+        # 计算输入层-隐含层权重更新矩阵
+        error_h = np.matmul(((label - z) * z * (1-z)).T, self.w_hj.T).T * (1-y_h**2)
+        delta_w_ih = eta * np.matmul(x_i, error_h.T)
 
-    # 误差函数 MSE准则
-    def MSEloss(self, X, Y):
-        return np.sum(np.power(self.predict(X) - Y, 2) / 2)
+        return delta_w_hj, delta_w_ih, error
 
-    # 预测准确率
-    def acc(self, X, Y):
-        count = (np.sum(np.argmax(Y, axis=1) == np.argmax(self.predict(X), axis=1)))
-        return count / X.shape[0] * 100
+    def train(self, bk_mode, eta, epoch_num):
+        """
+        网络训练
+        Parameters:
+            bk_mode: 反向传播方式('single' or 'batch')
+            eta: 学习率
+            epoch_num: 全部训练数据迭代次数
+        """
+        # 单样本更新
+        if bk_mode == 'single':
+            E = []
+            for _ in range(epoch_num):
+                e = []
+                for idx, x_i in enumerate(self.train_data):
+                    # 前向传播
+                    z, y_h = self.forward(x_i)
+                    # 反向传播
+                    delta_w_hj, delta_w_ih, error = self.backward(z, self.train_label[idx], eta, y_h, x_i)
+                    # 权重矩阵更新
+                    self.w_hj += delta_w_hj
+                    self.w_ih += delta_w_ih
 
-    # 前向传播获得预测情况
-    def predict(self, X):
-        x = X
-        y = self.input.forward(x)
-        z = self.hidden.forward(y)
-        return z
+                    e.append(error)
+                E.append(np.mean(e))
 
-    # 反向传播更新权重
-    def update(self, X, y):
-        z = self.predict(X)  # 一次前向传播
-        delta = y - z  # 计算最后一层误差
-        delta = self.hidden.backward(delta)  # 向前传播误差
-        self.input.backward(delta)
-        return 1
+        # 批次更新
+        if bk_mode == 'batch':
+            E = []
+            for _ in range(epoch_num):
+                e = []
+                Delta_w_hj = 0
+                Delta_w_ih = 0
+                for idx, x_i in enumerate(self.train_data):
+                    # 前向传播
+                    z, y_h = self.forward(x_i)
+                    # 反向传播
+                    delta_w_hj, delta_w_ih, error = self.backward(z, self.train_label[idx], eta, y_h, x_i)
+                    # 更新权重矩阵累加
+                    Delta_w_hj += delta_w_hj
+                    Delta_w_ih += delta_w_ih
 
-    def training(self, X, y):
-        """进行一次前向-反向传播"""
-        # self.model_builder()
-        self.update(X, y)
-        # loss = self.MSEloss()
-        # acc = self.acc()
-        return 1
+                    e.append(error)
+                # 权重矩阵批次更新
+                self.w_hj += Delta_w_hj
+                self.w_ih += Delta_w_ih
+                E.append(np.mean(e))
 
-# 主函数，绘制acc和loss图像
-if __name__ == '__main__':
-    np.random.seed(10)
-    data = readData()
-    X, y = data.get_train_data()
+        return E  # 返回误差曲线
 
-    hidden_num = [3, 5, 10, 20]
-    batch_size = [1, 5, 10]
-    learning_rate = [0.01, 0.05, 0.1, 1]
-    running_time = []
-    stop_epoch = []
-    each_loss = []
-    each_acc = []
 
-    # """开始计算运行时间"""
-    # for i in range(len(learning_rate)):
-    #
-    #     start = time.time()
-    #     my_model = bp_model(X, y, epoch=5000, batch_size=batch_size[0],
-    #                         learning_rate=learning_rate[i], hidden_num=hidden_num[2])
-    #     loss, acc, full_epoch = my_model.train()
-    #     each_acc.append(acc[-1])
-    #     each_loss.append(loss[-1])
-    #     end = time.time()
-    #     running_time.append(end - start)
-    #     stop_epoch.append(full_epoch)
-    #     # print('time cost : %.5f sec' % running_time[i])
-    #     # print('epoch reach to %d, acc=100' % stop_epoch[i])
-    #
-    # print('time cost : ', running_time)
-    # print('stop_epoch: ', stop_epoch)
-    # print('loss: ', each_loss)
-    # print('acc: ', each_acc)
-    # # print(stop_epoch)
+if __name__ == "__main__":
+    # 输入数据
+    data_1 = [[1.58, 2.32, -5.8], [0.67, 1.58, -4.78], [1.04, 1.01, -3.63],
+              [-1.49, 2.18, -3.39], [-0.41, 1.21, -4.73], [1.39, 3.16, 2.87],
+              [1.20, 1.40, -1.89], [-0.92, 1.44, -3.22], [0.45, 1.33, -4.38],
+              [-0.76, 0.84, -1.96]]
+    data_2 = [[0.21, 0.03, -2.21], [0.37, 0.28, -1.8], [0.18, 1.22, 0.16],
+              [-0.24, 0.93, -1.01], [-1.18, 0.39, -0.39], [0.74, 0.96, -1.16],
+              [-0.38, 1.94, -0.48], [0.02, 0.72, -0.17], [0.44, 1.31, -0.14],
+              [0.46, 1.49, 0.68]]
+    data_3 = [[-1.54, 1.17, 0.64], [5.41, 3.45, -1.33], [1.55, 0.99, 2.69],
+              [1.86, 3.19, 1.51], [1.68, 1.79, -0.87], [3.51, -0.22, -1.39],
+              [1.40, -0.44, -0.92], [0.44, 0.83, 1.97], [0.25, 0.68, -0.99],
+              [0.66, -0.45, 0.08]]
+    # 生成训练数据
+    train_data, train_label = gen_train_data([data_1, data_2, data_3])
 
-    """分别绘制acc和loss图像"""
-    my_model = bp_model(X, y, epoch=5000, batch_size=batch_size[1],
-                        learning_rate=learning_rate[2], hidden_num=hidden_num[2])
-    loss, acc, full_epoch = my_model.train()
-    # 美化后的图表
-    plt.figure(1)
-    plt.plot(loss, color='b', linestyle='-', linewidth=2, label='Loss')  # 使用蓝色线条表示loss
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)  # 更细的网格
-    plt.title('Training Loss Over Epochs', fontsize=16)  # 标题
-    plt.xlabel('Epoch', fontsize=14)  # x轴标签
-    plt.ylabel('Loss', fontsize=14)  # y轴标签
-    plt.axis('tight')
-    plt.legend()  # 添加图例
-    plt.xticks(fontsize=12)  # 设置x轴字体大小
-    plt.yticks(fontsize=12)  # 设置y轴字体大小
-    plt.tight_layout()  # 自动调整布局
 
-    plt.figure(2)
-    plt.plot(acc, color='g', linestyle='-', linewidth=2, label='Accuracy')  # 使用绿色线条表示accuracy
-    plt.grid(True, which='both', linestyle='--', linewidth=0.5)  # 更细的网格
-    plt.title('Training Accuracy Over Epochs', fontsize=16)  # 标题
-    plt.xlabel('Epoch', fontsize=14)  # x轴标签
-    plt.ylabel('Accuracy (%)', fontsize=14)  # y轴标签
-    plt.axis('tight')
-    plt.legend()  # 添加图例
-    plt.xticks(fontsize=12)  # 设置x轴字体大小
-    plt.yticks(fontsize=12)  # 设置y轴字体大小
-    plt.tight_layout()  # 自动调整布局
+    ## 1，隐含层不同节点数对训练精度的影响
+    # 保持网络其他参数不变, 梯度更新步长 eta=0.1, 采用单样本更新方式, 改变隐含层结点个数分别为3,9,15.
+    # 输出不同隐含层结点个数下的网络输出误差随迭代次数增加的变化曲线
+    hidden_nodes = [3, 9, 15]  # 隐含层节点数
+    for h_num in hidden_nodes:
+        n = net(train_data, train_label, h_num=h_num)
+        E = n.train(bk_mode='single', eta=0.1, epoch_num=100)
+        plt.plot(E, label="h_num={}".format(h_num))
 
+    plt.legend()
+    plt.xlabel('Epochs')
+    plt.ylabel('Mean Squared Error')
+    plt.title('Effect of Hidden Layer Size on Training Accuracy')
+    plt.savefig('hidden_layer_size_error.png')
     plt.show()
 
+    ## 2.不同的梯度更新步长对训练的影响
+    # 保持网络结构不变, 隐含层包含10个结点, 改变梯度更新步长 eta 依次为0.1, 0.4, 0.8,
+    # 输出不同更新步长下的网络输出误差随迭代次数增加的变化曲线
+    eta_values = [0.1, 0.4, 0.8]  # 不同的学习率
+    for eta in eta_values:
+        n = net(train_data, train_label, h_num=10)
+        E = n.train(bk_mode='batch', eta=eta, epoch_num=100)
+        plt.plot(E, label="eta={}".format(eta))
+
+    plt.legend()
+    plt.xlabel('Epochs')
+    plt.ylabel('Mean Squared Error')
+    plt.title('Effect of Learning Rate on Training Accuracy')
+    plt.savefig('learning_rate_error.png')
+    plt.show()
+
+    ## 3.在网络结构固定的情况下,绘制出目标函数随着迭代步数增加的变化曲线
+    # 以隐含层结点为15个, 单样本更新方式, 更新步长 eta = 0.4, 迭代100次的结果为例
+    n = net(train_data, train_label, h_num=10)
+    E = n.train(bk_mode='single', eta=0.4, epoch_num=100)
+    plt.plot(E, label="eta={}".format(0.4))
+
+    plt.legend()
+    plt.xlabel('Epochs')
+    plt.title('Error Curves - Single Update')
+    plt.savefig('single_update_error.png')  # 保存单样本更新的误差曲线
+    plt.show()
+
+    # 以隐含层结点为15个, 批量更新方式, 更新步长 eta = 0.4, 迭代100次的结果为例
+    n = net(train_data, train_label, h_num=10)
+    E = n.train(bk_mode='batch', eta=0.4, epoch_num=100)
+    plt.plot(E, label="eta={}".format(0.4))
+
+    plt.legend()
+    plt.xlabel('Epochs')
+    plt.title('Error Curves - Batch Update')
+    plt.savefig('batch_update_error.png')  # 保存批量更新的误差曲线
+    plt.show()
