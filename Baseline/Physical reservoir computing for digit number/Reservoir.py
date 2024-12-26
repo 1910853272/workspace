@@ -1,116 +1,154 @@
 import pandas as pd
 import numpy as np
-from IPython.display import display
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from torch.utils.data import Dataset, DataLoader
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# 从Excel文件中加载数据到DataFrame
-data = pd.read_excel("./data.xlsx")
+# 1. 读取数据
+data_path = 'dataset.xlsx'  # 确保路径正确
+df = pd.read_excel(data_path)
 
-# 将电导值从西门子 (S) 转换为纳西门子 (nS)
-data *= 1E9
+# 2. 数据预处理
+# 2.1 分离特征和标签
+# 假设第一列是 'label'，接下来的80列是特征
+features = df.iloc[:, 1:].values  # 获取特征数据，形状为 (5000, 80)
+labels = df.iloc[:, 0].values     # 获取标签数据，形状为 (5000,)
 
-# 设置标准差为 0.1
-Standard_deviation = 0.1
+# 2.2 编码标签
+label_encoder = LabelEncoder()
+labels_encoded = label_encoder.fit_transform(labels)  # 将 'digit_0' 到 'digit_9' 编码为 0 到 9
 
-# 创建一个空的 DataFrame 用于存储训练数据
-train_data_01 = pd.DataFrame()
+# 2.3 标准化特征
+scaler = StandardScaler()
+features_scaled = scaler.fit_transform(features)  # 对特征进行标准化
 
-# 使用正态分布的随机数据模拟实验或观测数据的随机性
+# 3. 划分数据集为训练集和测试集
+X_train, X_test, y_train, y_test = train_test_split(
+    features_scaled, labels_encoded, test_size=0.2, random_state=42, stratify=labels_encoded
+)
 
-for i in range(0, 5):
-    # 创建 'LETTER' 列，生成服从正态分布的随机数据，均值为 i，标准差为 0
-    data0 = pd.DataFrame({'LETTER': np.random.normal(i, 0, size=100)})
+# 转换为PyTorch张量
+X_train_tensor = torch.tensor(X_train, dtype=torch.float32)  # 训练特征
+y_train_tensor = torch.tensor(y_train, dtype=torch.long)     # 训练标签
+X_test_tensor = torch.tensor(X_test, dtype=torch.float32)    # 测试特征
+y_test_tensor = torch.tensor(y_test, dtype=torch.long)       # 测试标签
 
-    # 生成 'CELL1' 列，数据的均值是 data 中第 5*i 行的最大值和最小值的均值，标准差为 0.1
-    data1 = pd.DataFrame({'CELL1': np.random.normal(np.mean([np.max(data.iloc[5*i+0]), np.min(data.iloc[5*i+0])]), 0.1, size=100)})
+# 4. 创建自定义数据集类
+class DigitDataset(Dataset):
+    def __init__(self, features, labels):
+        self.features = features
+        self.labels = labels
 
-    # 生成 'CELL2' 列，数据的均值是 data 中第 5*i+1 行的最大值和最小值的均值，标准差为 0.1
-    data2 = pd.DataFrame({'CELL2': np.random.normal(np.mean([np.max(data.iloc[5*i+1]), np.min(data.iloc[5*i+1])]), 0.1, size=100)})
+    def __len__(self):
+        return self.features.shape[0]
 
-    # 生成 'CELL3' 列，数据的均值是 data 中第 5*i+2 行的最大值和最小值的均值，标准差为 0.1
-    data3 = pd.DataFrame({'CELL3': np.random.normal(np.mean([np.max(data.iloc[5*i+2]), np.min(data.iloc[5*i+2])]), 0.1, size=100)})
+    def __getitem__(self, idx):
+        return self.features[idx], self.labels[idx]
 
-    # 生成 'CELL4' 列，数据的均值是 data 中第 5*i+3 行的最大值和最小值的均值，标准差为 0.1
-    data4 = pd.DataFrame({'CELL4': np.random.normal(np.mean([np.max(data.iloc[5*i+3]), np.min(data.iloc[5*i+3])]), 0.1, size=100)})
+# 创建训练集和测试集的数据集对象
+train_dataset = DigitDataset(X_train_tensor, y_train_tensor)
+test_dataset = DigitDataset(X_test_tensor, y_test_tensor)
 
-    # 生成 'CELL5' 列，数据的均值是 data 中第 5*i+4 行的最大值和最小值的均值，标准差为 0.1
-    data5 = pd.DataFrame({'CELL5': np.random.normal(np.mean([np.max(data.iloc[5*i+4]), np.min(data.iloc[5*i+4])]), 0.1, size=100)})
+# 创建数据加载器
+batch_size = 256
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)  # 训练数据加载器
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)    # 测试数据加载器
 
-    # 将 data0, data1, data2, data3, data4, data5 沿列方向合并，然后将其添加到训练数据集中
-    train_data_01 = pd.concat([train_data_01, pd.concat([data0, data1, data2, data3, data4, data5], axis=1)])
+# 5. 定义感知机模型
+class PerceptronModel(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(PerceptronModel, self).__init__()
+        self.linear = nn.Linear(input_dim, output_dim)  # 线性层
 
-# 显示生成的训练数据
-display(train_data_01)
+    def forward(self, x):
+        out = self.linear(x)  # 前向传播
+        return out
 
-# 将训练数据保存为 CSV 文件，编码方式为 CP949，且不保存索引
-train_data_01.to_csv("train_data_01.csv", encoding="CP949", index=False)
+input_dim = X_train.shape[1]  # 输入特征维度为80
+output_dim = len(np.unique(labels_encoded))  # 输出类别数为10
 
-# 创建一个空的 DataFrame 用于存储所有数据
-total_data = pd.DataFrame()
+model = PerceptronModel(input_dim, output_dim)  # 实例化模型
 
-# 循环处理五组数据
-for i in range(0, 5):
-    # 选取 train_data_01 中的第 i 组数据（100 行数据）
-    total = train_data_01[100*i:100*(i+1)]
+# 6. 定义损失函数和优化器
+criterion = nn.CrossEntropyLoss()  # 交叉熵损失函数，适用于多分类
+optimizer = optim.SGD(model.parameters(), lr=0.001)  # 随机梯度下降优化器，学习率为0.001
 
-    # 将选定的数据从宽格式转换为长格式，只保留 'CELL1', 'CELL2', 'CELL3', 'CELL4', 'CELL5' 列
-    total = pd.melt(total, value_vars=['CELL1', 'CELL2', 'CELL3', 'CELL4', 'CELL5'])
+# 7. 训练模型
+num_epochs = 100  # 训练轮数
+train_accuracy_history = []  # 用于记录每轮的训练准确率
 
-    # 将每次处理的数据连接到 total_data 中，沿列方向合并
-    total_data = pd.concat([total_data, total], axis=1)
+for epoch in range(num_epochs):
+    model.train()  # 设置模型为训练模式
+    correct = 0
+    total = 0
+    epoch_loss = 0
 
-# 显示合并后的总数据
-display(total_data)
+    for batch_features, batch_labels in train_loader:
+        # 前向传播
+        outputs = model(batch_features)  # 获取模型输出
+        loss = criterion(outputs, batch_labels)  # 计算损失
 
-# 设置标准差为 0.1
-Standard_deviation = 0.1
+        # 反向传播和优化
+        optimizer.zero_grad()  # 清零梯度
+        loss.backward()        # 反向传播
+        optimizer.step()       # 更新参数
 
-# 创建一个空的 DataFrame 用于存储测试数据
-test_data_01 = pd.DataFrame()
+        epoch_loss += loss.item()  # 累加损失
 
-# 循环生成五组数据
-for i in range(0, 5):
-    # 创建 'LETTER' 列，生成服从正态分布的随机数据，均值为 i，标准差为 0
-    data0 = pd.DataFrame({'LETTER': np.random.normal(i, 0, size=100)})
+        # 计算准确率
+        _, predicted = torch.max(outputs.data, 1)  # 获取预测结果
+        total += batch_labels.size(0)               # 累加样本数量
+        correct += (predicted == batch_labels).sum().item()  # 累加正确预测的数量
 
-    # 生成 'CELL1' 列，数据的均值是 data 中第 5*i 行的最大值和最小值的均值，标准差为 0.1
-    data1 = pd.DataFrame({'CELL1': np.random.normal(np.mean([np.max(data.iloc[5*i+0]), np.min(data.iloc[5*i+0])]), 0.1, size=100)})
+    # 计算本轮的准确率
+    accuracy = correct / total
+    train_accuracy_history.append(accuracy)  # 记录准确率
 
-    # 生成 'CELL2' 列，数据的均值是 data 中第 5*i+1 行的最大值和最小值的均值，标准差为 0.1
-    data2 = pd.DataFrame({'CELL2': np.random.normal(np.mean([np.max(data.iloc[5*i+1]), np.min(data.iloc[5*i+1])]), 0.1, size=100)})
+    # 每10轮打印一次损失和准确率，准确率以百分数显示
+    if (epoch+1) % 10 == 0:
+        avg_loss = epoch_loss / len(train_loader)
+        print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}, Accuracy: {accuracy*100:.2f}%')
 
-    # 生成 'CELL3' 列，数据的均值是 data 中第 5*i+2 行的最大值和最小值的均值，标准差为 0.1
-    data3 = pd.DataFrame({'CELL3': np.random.normal(np.mean([np.max(data.iloc[5*i+2]), np.min(data.iloc[5*i+2])]), 0.1, size=100)})
+# 8. 绘制准确率与轮数的关系
+plt.figure(figsize=(10, 6))
+plt.plot(range(1, num_epochs+1), [acc * 100 for acc in train_accuracy_history], label='Training Accuracy')
+plt.xlabel('Epoch')  # 横轴为轮数
+plt.ylabel('Accuracy (%)')  # 纵轴为准确率，单位为百分比
+plt.title('Perceptron Training Accuracy over Epochs')  # 图表标题
+plt.legend()
+plt.grid(True)
+plt.show()
 
-    # 生成 'CELL4' 列，数据的均值是 data 中第 5*i+3 行的最大值和最小值的均值，标准差为 0.1
-    data4 = pd.DataFrame({'CELL4': np.random.normal(np.mean([np.max(data.iloc[5*i+3]), np.min(data.iloc[5*i+3])]), 0.1, size=100)})
+# 9. 在测试集上评估模型
+model.eval()  # 设置模型为评估模式
+all_preds = []
+all_labels = []
 
-    # 生成 'CELL5' 列，数据的均值是 data 中第 5*i+4 行的最大值和最小值的均值，标准差为 0.1
-    data5 = pd.DataFrame({'CELL5': np.random.normal(np.mean([np.max(data.iloc[5*i+4]), np.min(data.iloc[5*i+4])]), 0.1, size=100)})
+with torch.no_grad():  # 不计算梯度
+    for batch_features, batch_labels in test_loader:
+        outputs = model(batch_features)  # 获取模型输出
+        _, predicted = torch.max(outputs.data, 1)  # 获取预测结果
+        all_preds.extend(predicted.numpy())  # 记录预测结果
+        all_labels.extend(batch_labels.numpy())  # 记录真实标签
 
-    # 将 data0, data1, data2, data3, data4, data5 沿列方向合并，然后将其添加到测试数据集中
-    test_data_01 = pd.concat([test_data_01, pd.concat([data0, data1, data2, data3, data4, data5], axis=1)])
+# 计算测试集准确率，并以百分比显示
+test_accuracy = accuracy_score(all_labels, all_preds)
+print(f'\nPerceptron Model Test Accuracy: {test_accuracy*100:.2f}%')
 
-# 显示生成的测试数据
-display(test_data_01)
-
-# 将测试数据保存为 CSV 文件，编码方式为 CP949，且不保存索引
-test_data_01.to_csv("test_data_01.csv", encoding="CP949", index=False)
-
-# 创建一个空的 DataFrame 用于存储所有数据
-total_data2 = pd.DataFrame()
-
-# 循环处理十五组数据
-for i in range(0, 15):
-    # 选取 test_data_01 中的第 i 组数据（100 行数据）
-    total2 = test_data_01[100*i:100*(i+1)]
-
-    # 将选定的数据从宽格式转换为长格式，只保留 'CELL1', 'CELL2', 'CELL3', 'CELL4', 'CELL5' 列
-    total2 = pd.melt(total2, value_vars=['CELL1', 'CELL2', 'CELL3', 'CELL4', 'CELL5'])
-
-    # 将每次处理的数据连接到 total_data2 中，沿列方向合并
-    total_data2 = pd.concat([total_data2, total2], axis=1)
-
-# 显示合并后的总数据
-display(total_data2)
-
-
+# 绘制归一化后的混淆矩阵，突出显示每个类别的准确率，数值以百分比显示
+plt.figure(figsize=(10, 8))
+conf_matrix_normalized = confusion_matrix(all_labels, all_preds, normalize='true') * 100  # 归一化并转换为百分比
+sns.heatmap(conf_matrix_normalized, annot=True, fmt='.2f',
+            xticklabels=label_encoder.classes_,
+            yticklabels=label_encoder.classes_,
+            cmap='Blues')
+plt.xlabel('Predicted Label (%)')  # X轴标签
+plt.ylabel('True Label (%)')       # Y轴标签
+plt.title('Perceptron Model Confusion Matrix (Normalized %)')  # 图表标题
+plt.show()
