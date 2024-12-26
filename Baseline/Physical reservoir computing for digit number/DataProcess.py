@@ -4,11 +4,11 @@ import pandas as pd
 # 读取 data.xlsx 文件
 df = pd.read_excel('data.xlsx')
 
-# 创建一个空的列表用于存储所有扩充后的数据和标签
+# 创建一个空的列表用于存储所有添加高斯噪声后的数据和标签
 all_data = []
 all_labels = []
 
-# 每列有80个值，每个值都用正态分布生成500个随机数据，标准差为0.01
+# 每列有80个值，每个值都用正态分布生成500个随机数据，标准差为0.1
 num_samples_per_value = 500  # 每个值生成500个数据
 std_dev = 0.1  # 标准差
 
@@ -46,7 +46,7 @@ expanded_df.insert(0, 'label', all_labels)
 # 打印部分数据以验证
 print(expanded_df.head())
 
-# 保存扩充后的数据为新的 Excel 文件
+# 保存添加高斯噪声的数据为新的 Excel 文件
 expanded_df.to_excel('dataset.xlsx', index=False)
 
-print("数据集已扩充，并保存为dataset.xlsx")
+print("数据集已添加噪声并保存为dataset.xlsx")
