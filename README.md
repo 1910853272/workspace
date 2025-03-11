@@ -1,2 +1,2 @@
-# Workspace
-Postgraduate Project: Coding learning and experimentation during graduate school
+# Postgraduate Project
+Coding learning and experimentation during graduate school
