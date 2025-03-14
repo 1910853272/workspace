@@ -1,7 +1,4 @@
-'''训练模型的数据集是自定义的数据集，dataset下每个文件夹的标题就是图片的分类标签（Bottom right，Down，Left，Right，Top left，Up），
-每张图片是168*168像素大小的灰度图像，内容分别是朝Bottom right，Down，Left，Right，Top left，Up方向运动的小球,每个类别各有4张图片。
-使用pytorch定义三层MLP对上述图片进行分类，输出训练轮数与准确率的图像和混淆矩阵的图像
-'''
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -28,6 +25,10 @@ test_dataset = datasets.ImageFolder(root='dataset/test', transform=transform)
 
 train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+
+# 创建保存图像的文件夹
+output_dir = 'plot'
+os.makedirs(output_dir, exist_ok=True)
 
 # 定义模型
 class MLP(nn.Module):
@@ -60,7 +61,6 @@ for epoch in range(num_epochs):
     total_loss = 0
     for images, labels in train_loader:
         images, labels = images.to(device), labels.to(device)
-
         optimizer.zero_grad()
         outputs = model(images)
         loss = criterion(outputs, labels)
@@ -92,13 +92,14 @@ plt.xlabel('Epoch')
 plt.ylabel('Test Accuracy (%)')
 plt.title('Test Accuracy vs Epoch')
 plt.grid(True)
-plt.show()
+plt.savefig(os.path.join(output_dir, 'accuracy_curve.png'))
+plt.close()
 
 # 绘制混淆矩阵
 cm = confusion_matrix(true_labels, preds)
-classes = train_dataset.classes  # 因为 train_dataset 和 test_dataset 类别应保持一致
+classes = train_dataset.classes
 
-def plot_confusion_matrix(cm, classes, normalize=False, cmap=plt.cm.Blues):
+def plot_confusion_matrix(cm, classes, cmap=plt.cm.Blues):
     plt.figure(figsize=(8, 6))
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title("Confusion Matrix")
@@ -108,15 +109,16 @@ def plot_confusion_matrix(cm, classes, normalize=False, cmap=plt.cm.Blues):
     plt.yticks(tick_marks, classes)
 
     thresh = cm.max() / 2.
-    fmt = '.2f' if normalize else 'd'
     for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
-        plt.text(j, i, format(cm[i, j], fmt),
-                 horizontalalignment="center",
+        plt.text(j, i, cm[i, j], horizontalalignment="center",
                  color="white" if cm[i, j] > thresh else "black")
 
     plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.tight_layout()
-    plt.show()
+    plt.savefig(os.path.join(output_dir, 'confusion_matrix.png'))
+    plt.close()
 
 plot_confusion_matrix(cm, classes=classes)
+
+print(f"所有图像已保存到: {output_dir}")
